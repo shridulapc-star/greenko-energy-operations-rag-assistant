@@ -1,0 +1,223 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Energy Operations Document RAG Assistant</title>
+  <style>
+    :root {
+      --green: #12372a;
+      --green-light: #e8f2ec;
+      --background: #f5f8f6;
+      --border: #dce5df;
+      --text: #1d2b24;
+      --muted: #647269;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 32px 18px;
+      font-family: Arial, sans-serif;
+      background: var(--background);
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    main { max-width: 900px; margin: auto; }
+
+    header {
+      background: var(--green);
+      color: white;
+      padding: 25px;
+      border-radius: 14px;
+      margin-bottom: 22px;
+    }
+
+    header h1 { margin: 0 0 6px; font-size: 25px; }
+    header p { margin: 0; color: #d7e8dd; }
+
+    .card {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 22px;
+      margin-bottom: 18px;
+    }
+
+    h2 { margin-top: 0; font-size: 19px; }
+
+    label { display: block; font-weight: 600; margin-bottom: 8px; }
+
+    textarea {
+      width: 100%;
+      min-height: 100px;
+      padding: 12px;
+      font: inherit;
+      border: 1px solid #b9c9be;
+      border-radius: 8px;
+      resize: vertical;
+    }
+
+    textarea:focus {
+      outline: 2px solid #7ca88c;
+      outline-offset: 1px;
+    }
+
+    button {
+      background: var(--green);
+      color: white;
+      border: 0;
+      border-radius: 8px;
+      padding: 11px 16px;
+      margin: 12px 8px 0 0;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    button.secondary {
+      background: white;
+      color: var(--green);
+      border: 1px solid var(--green);
+    }
+
+    button:disabled { opacity: .6; cursor: wait; }
+
+    .hint, .notice { color: var(--muted); font-size: 14px; }
+    .notice { margin-bottom: 0; }
+
+    #out {
+      background: #f8faf9;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 15px;
+      min-height: 70px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      font: 14px/1.6 Consolas, monospace;
+    }
+
+    .status {
+      display: inline-block;
+      padding: 3px 9px;
+      border-radius: 20px;
+      background: var(--green-light);
+      color: var(--green);
+      font-size: 12px;
+    }
+
+    footer { text-align: center; color: var(--muted); font-size: 13px; }
+
+    @media (max-width: 600px) {
+      body { padding: 18px 12px; }
+      header, .card { padding: 17px; }
+      header h1 { font-size: 21px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <span class="status">Document assistant</span>
+      <h1>Energy Operations</h1>
+      <p>Document Intelligence Assistant for safety, maintenance and operations</p>
+    </header>
+
+    <section class="card">
+      <h2>Ask an operational question</h2>
+      <p class="hint">Answers are based on the supplied energy-operation documents.</p>
+
+      <form id="questionForm">
+        <label for="question">Your question</label>
+        <textarea id="question" maxlength="1000" required
+          placeholder="Example: What checks are recommended for high gearbox vibration?"></textarea>
+        <button id="askButton" type="submit">Ask question</button>
+        <button class="secondary" id="demoButton" type="button">Check API</button>
+      </form>
+    </section>
+
+    <section class="card" aria-live="polite">
+      <h2>Answer and evidence</h2>
+      <p id="status" class="hint">Enter a question to begin.</p>
+      <pre id="out">Your answer and supporting evidence will appear here.</pre>
+      <p class="notice">For safety-critical decisions, verify retrieved information against the approved operational procedure.</p>
+    </section>
+
+    <footer>Prototype using the supplied assignment dataset</footer>
+  </main>
+
+  <script>
+    const output = document.getElementById('out');
+    const statusText = document.getElementById('status');
+    const askButton = document.getElementById('askButton');
+
+    document.getElementById('demoButton').addEventListener('click', async () => {
+      statusText.textContent = 'Checking API...';
+      output.textContent = '';
+
+      try {
+        const response = await fetch('/api/demo');
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || response.statusText);
+
+        output.textContent = JSON.stringify(data, null, 2);
+        statusText.textContent = 'API check completed.';
+      } catch (error) {
+        statusText.textContent = 'API check failed.';
+        output.textContent = error.message;
+      }
+    });
+
+    document.getElementById('questionForm').addEventListener('submit', async event => {
+      event.preventDefault();
+      const question = document.getElementById('question').value.trim();
+
+      if (!question) {
+        statusText.textContent = 'Please enter a question.';
+        return;
+      }
+
+      askButton.disabled = true;
+      statusText.textContent = 'Searching the supplied documents...';
+      output.textContent = '';
+
+      try {
+        const response = await fetch('/api/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: question })
+        });
+
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || response.statusText);
+
+        const citations = (data.citations || []).map(item =>
+          `- ${item.source} (${item.chunk_id})`
+        ).join('\n') || 'No citations returned.';
+
+        const evidence = (data.retrieval_evidence || []).map(item =>
+          `Source: ${item.source}\nChunk: ${item.chunk_id}\n` +
+          `Similarity: ${item.score}\n${item.text}`
+        ).join('\n\n') || 'No supporting evidence found.';
+
+        output.textContent =
+          `Answer:\n${data.result || 'No answer returned.'}\n\n` +
+          `Abstained: ${data.abstained ?? 'Not reported'}\n\n` +
+          `Citations:\n${citations}\n\n` +
+          `Retrieval evidence:\n${evidence}`;
+
+        statusText.textContent = data.abstained
+          ? 'Insufficient evidence was found for this question.'
+          : 'Response received. Review the citations and evidence below.';
+      } catch (error) {
+        statusText.textContent = 'The request could not be completed.';
+        output.textContent = error.message;
+      } finally {
+        askButton.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
